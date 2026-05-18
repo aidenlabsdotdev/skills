@@ -1,7 +1,7 @@
 ---
 name: proxyhuman
 description: Hand the current browser session to a human when you hit a step that's gated on a person — signing in, solving a captcha, completing 2FA, reading an OTP from email/SMS, entering payment info, picking a subjective option, or any browser interaction where retrying brittle automation is slower than asking. Returns a viewer URL the human opens (you must surface this through your harness's messaging tool — the skill does not notify on its own) and, once they hand control back, a structured log of what they did so you can resume the task.
-compatibility: Requires the @proxyhuman/mcp MCP server installed and registered (`npm i -g @proxyhuman/mcp && claude mcp add proxyhuman -- proxyhuman-mcp`). The MCP itself needs Chrome with CDP enabled (Hermes's chrome-shared.service satisfies this out of the box) and network access to https://api.proxyhuman.ai.
+compatibility: Requires the @proxyhuman/mcp MCP server installed (`npm i -g @proxyhuman/mcp`) and registered with the host harness (Claude Code, Hermes, Cursor, Codex, etc. — see the Prerequisites section below for the harness-agnostic install flow). The MCP needs Chrome with CDP enabled and network access to https://api.proxyhuman.ai.
 metadata:
   author: aidenlabs
   version: "0.1.0"
@@ -77,18 +77,45 @@ Use `currentUrl` and `actions` to figure out what happened, then resume your wor
 - **Captcha** — the page advanced; carry on with the next step
 - **Subjective choice** — read the final URL or last actions to learn which option the human picked
 
-## Prerequisites (one-time setup)
+## Prerequisites (one-time setup) — run these on the user's behalf if needed
 
-If `open_browser_handoff_link` is not in your tool list, the ProxyHuman MCP server isn't installed. The user needs to:
+If `open_browser_handoff_link` is **not** in your tool list when you read this
+skill, the ProxyHuman MCP server isn't installed yet. Run the install on the
+user's behalf — you have shell access, they don't need to leave the chat:
 
-```bash
-npm i -g @proxyhuman/mcp                          # one-time install
-proxyhuman sign-up --email <their-email>                 # one-time, sends OTP
-proxyhuman verify <otp-from-email>                       # one-time
-claude mcp add proxyhuman -- proxyhuman-mcp              # registers the MCP
-```
+1. **Install the MCP server** (one shell command, ~10s with ffmpeg
+   postinstall on top):
+   ```bash
+   npm i -g @proxyhuman/mcp
+   ```
 
-After that the tools appear and this skill works without further config.
+2. **Sign the user up.** Ask them for their email if you don't already have
+   it. This sends a one-time code to that address:
+   ```bash
+   proxyhuman sign-up --email <their-email>
+   ```
+   Then ask the user to read you the code from their inbox and verify:
+   ```bash
+   proxyhuman verify <code-they-give-you>
+   ```
+   The API key is saved to `~/.proxyhuman/config.json` (chmod 600). The MCP
+   reads it automatically.
+
+3. **Register the MCP with your harness.** This step is harness-specific —
+   *you know your own harness*, so do whatever is correct for it. Examples:
+
+   | Harness        | How to register `proxyhuman-mcp`                                                                                          |
+   |----------------|---------------------------------------------------------------------------------------------------------------------------|
+   | Claude Code    | `claude mcp add proxyhuman -- proxyhuman-mcp`                                                                             |
+   | Hermes         | Add a `proxyhuman:` entry under `mcp_servers:` in `~/.hermes/config.yaml` with `command: proxyhuman-mcp`. Then `hermes reload`. |
+   | Cursor / Codex | Add to the harness's MCP config (varies — consult the harness's docs)                                                     |
+
+   After registering, the `open_browser_handoff_link` and
+   `wait_for_human_handback` tools become available on your next turn and
+   the rest of this skill applies.
+
+If you (the agent) don't have shell access on the user's machine, paste the
+three blocks above into the conversation and ask them to run them.
 
 ## Notes
 
