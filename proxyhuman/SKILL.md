@@ -4,7 +4,7 @@ description: Hand the current browser session to a human when you hit a step tha
 compatibility: Requires the @proxyhuman/mcp MCP server installed (`npm i -g @proxyhuman/mcp`) and registered with the host harness (Claude Code, Hermes, Cursor, Codex, etc. — see the Prerequisites section below for the harness-agnostic install flow). The MCP needs Chrome with CDP enabled and network access to https://api.proxyhuman.ai.
 metadata:
   author: aidenlabs
-  version: "0.1.0"
+  version: "0.2.1"
   homepage: https://proxyhuman.ai
   repository: https://github.com/aidenlabsdotdev/skills
 ---
@@ -20,23 +20,42 @@ You're driving a Chrome browser (via Hermes' browser tools, Playwright, Puppetee
 - **Subjective decisions** — "which of these search results matches what the user wanted", "which size/color/option to pick"
 - **Anything that's failing repeatedly** — if automated retries aren't working, the human is faster than another debug loop
 
+## Critical: always pass `cdp_target` explicitly
+
+Before opening a hand-off, you must figure out which CDP endpoint corresponds to the Chrome you're driving and pass it as `cdp_target`. **If you let the MCP guess, you risk attaching to the wrong tab or wrong browser entirely — the human will see a different Chrome than the one you're stuck on, and the hand-off is wasted.**
+
+How to find the right CDP target — pick whichever applies to your situation:
+
+- **Hermes `browser_dispatch` / `browser_*` tools** — the session's CDP URL is part of the daemon record; lift it from there.
+- **Playwright/Puppeteer** — the endpoint you used to `connectOverCDP(...)` is the same URL to pass here (e.g. `http://localhost:9222`).
+- **browser-use Agent** — read `agent.browser.cdp_url` after the browser is started.
+- **A Chrome you launched with `--remote-debugging-port=N`** — pass `http://localhost:N`.
+- **A remote Chrome (different host, container, etc.)** — pass that host's CDP URL; ProxyHuman will publish from wherever the MCP runs.
+
+If you genuinely can't determine it, the MCP falls back to probing common ports + reading `~/.hermes/config.yaml`. Treat that as a last resort — log a warning to the user so they know which Chrome got picked up.
+
 ## How to use it (must be in this order)
 
-This skill is a wrapper around the `proxyhuman` MCP server. The MCP exposes two tools you'll call:
+This skill is a wrapper around the `proxyhuman` MCP server. The MCP exposes four tools:
+
+| Tool                          | Purpose                                                                 |
+|------------------------------|-------------------------------------------------------------------------|
+| `open_browser_handoff_link`  | Mint a fresh hand-off; returns `{ sessionId, viewerUrl }`.              |
+| `wait_for_human_handback`    | Block until human clicks "return control" (or timeout). Use this once. |
+| `get_handoff_status`         | Non-blocking poll: current state, viewer count, partial action log.    |
+| `cancel_handoff_link`        | Abort a pending hand-off you no longer need. Reaches the human if they're connected. |
 
 ### Step 1: Generate a hand-off URL
 
-Call `open_browser_handoff_link` with the CDP endpoint of the browser you need help with:
-
 ```
 open_browser_handoff_link({
-  cdp_target: "http://localhost:9222",     // pass explicitly — the URL of YOUR Chrome
-  prompt: "Please sign in with your Google account",   // optional, human-readable
+  cdp_target: "http://localhost:9222",   // REQUIRED in spirit — see section above
+  prompt: "Please sign in with your Google account",   // shown on the dashboard + can frame the ask to the human
 })
-→ { sessionId: "...", viewerUrl: "https://app.proxyhuman.ai/browser/..." }
+→ { sessionId: "...", viewerUrl: "https://hmnpr.xyz/..." }
 ```
 
-The `viewerUrl` is what the human opens — it mirrors the browser to their phone/desktop and lets them tap, scroll, and type inside the same Chrome session you're driving.
+The `viewerUrl` is a short link that redirects to `app.proxyhuman.ai/browser/<sessionId>` — it mirrors the browser to the human's phone/desktop and lets them tap, scroll, and type inside the same Chrome session you're driving.
 
 ### Step 2: **NOTIFY THE HUMAN** (this skill cannot do this for you)
 
@@ -57,16 +76,41 @@ Block on `wait_for_human_handback` with the sessionId. Pick a reasonable timeout
 ```
 wait_for_human_handback({ sessionId: "...", timeoutSec: 600 })
 → {
-    outcome: "human_done" | "timeout" | "disconnected",
+    state: "complete" | "failed" | "cancelled",         // terminal state
+    outcome: { type: "human_done" }                     // or one of:
+            | { type: "timeout" }                       //   no viewer ever connected
+            | { type: "disconnected" }                  //   skill WS dropped
+            | { type: "cancelled", reason?: "..." }     //   you or admin aborted
+            | { type: "cdp_lost" }                      //   the Chrome tab died
+            | { type: "encoder_crash" }                 //   ffmpeg died mid-stream
+            | { type: "relay_error", detail?: "..." },
     currentUrl: "...",           // the page the human ended on
-    actions: [                    // grouped play-by-play of what they did
-      { type: "type", text: "..." },
-      { type: "press", key: "Enter" },
+    actions: [                    // compacted play-by-play of what they did
+      { type: "type", text: "...", redacted?: true },
+      { type: "paste", text: "..." },
+      { type: "press", key: "Enter", modifiers?: ["shift"] },
       { type: "tap", x: 0.5, y: 0.3 },
+      { type: "scroll", x: 0.5, y: 0.5, deltaX: 0, deltaY: -120 },
+      { type: "navigate", url: "..." },
+      { type: "back" } | { type: "forward" } | { type: "reload" },
       { type: "url_update", url: "..." },
-      ...
+      { type: "human_done" },
     ]
   }
+```
+
+`redacted: true` appears on `type`/`paste` actions when the publisher detected the human was filling a password / OTP / payment field — the text is replaced with `*` chars before persisting. The behavior is automatic; you don't need to handle it specially.
+
+Session lifecycle (so you can interpret intermediate states from `get_handoff_status`):
+
+```
+awaiting_viewer  (URL minted, human hasn't opened it yet — 30min idle auto-cancels)
+       │
+       ▼
+   streaming  ↔  paused  (last viewer left; encoder stops, session alive)
+       │
+       ▼
+  complete / failed / cancelled   (terminal)
 ```
 
 ### Step 4: Continue your task
@@ -76,6 +120,11 @@ Use `currentUrl` and `actions` to figure out what happened, then resume your wor
 - **Auth flow** — you're now signed in; navigate to whatever you were trying to reach
 - **Captcha** — the page advanced; carry on with the next step
 - **Subjective choice** — read the final URL or last actions to learn which option the human picked
+- **Forensics** — point the user at the dashboard if they want to inspect what happened: `https://app.proxyhuman.ai/sessions/<sessionId>` (or `app.proxyhuman.ai/sessions` for the full list).
+
+### Aborting before handback
+
+If you change your mind mid-flight (you found another path, the user said "never mind", etc.) call `cancel_handoff_link({ sessionId, reason: "..." })`. The viewer's screen reflects the cancel; `wait_for_human_handback` returns with `outcome.type === 'cancelled'`.
 
 ## Prerequisites (one-time setup) — run these on the user's behalf if needed
 
