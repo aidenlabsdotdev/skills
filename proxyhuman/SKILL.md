@@ -4,7 +4,7 @@ description: Hand the current browser session to a human when you hit a step tha
 compatibility: Requires the @proxyhuman/mcp MCP server installed (`npm i -g @proxyhuman/mcp`) and registered with the host harness (Claude Code, Hermes, Cursor, Codex, etc. — see the Prerequisites section below for the harness-agnostic install flow). The MCP needs Chrome with CDP enabled and network access to https://api.proxyhuman.ai.
 metadata:
   author: aidenlabs
-  version: "0.2.1"
+  version: "0.2.2"
   homepage: https://proxyhuman.ai
   repository: https://github.com/aidenlabsdotdev/skills
 ---
