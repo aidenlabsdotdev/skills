@@ -4,7 +4,7 @@ description: Hand the current browser session to a human when you hit a step tha
 compatibility: Requires the @proxyhuman/mcp MCP server installed (`npm i -g @proxyhuman/mcp`) and registered with the host harness (Claude Code, Hermes, Cursor, Codex, etc. — see the Prerequisites section below for the harness-agnostic install flow). The MCP needs Chrome with CDP enabled and network access to https://api.proxyhuman.ai.
 metadata:
   author: aidenlabs
-  version: "0.2.2"
+  version: "0.2.3"
   homepage: https://proxyhuman.ai
   repository: https://github.com/aidenlabsdotdev/skills
 ---
@@ -26,7 +26,7 @@ Before opening a hand-off, you must figure out which CDP endpoint corresponds to
 
 How to find the right CDP target — pick whichever applies to your situation:
 
-- **Hermes `browser_dispatch` / `browser_*` tools** — the session's CDP URL is part of the daemon record; lift it from there.
+- **`hermes-mcp-browser` (`browser_*` tools)** — call `browser_list_sessions`, find the entry whose `session_id` matches the browser you're driving, and pass its `cdp_url` field as `cdp_target`. Available since hermes-mcp-browser exposed `cdp_url` on `SessionInfo`.
 - **Playwright/Puppeteer** — the endpoint you used to `connectOverCDP(...)` is the same URL to pass here (e.g. `http://localhost:9222`).
 - **browser-use Agent** — read `agent.browser.cdp_url` after the browser is started.
 - **A Chrome you launched with `--remote-debugging-port=N`** — pass `http://localhost:N`.
