@@ -1,10 +1,10 @@
 ---
 name: proxyhuman
 description: Hand the current browser session to a human when you hit a step that's gated on a person — signing in, solving a captcha, completing 2FA, reading an OTP from email/SMS, entering payment info, picking a subjective option, or any browser interaction where retrying brittle automation is slower than asking. Returns a viewer URL the human opens (you must surface this through your harness's messaging tool — the skill does not notify on its own) and, once they hand control back, a structured log of what they did so you can resume the task.
-compatibility: Requires the @proxyhuman/mcp MCP server installed (`npm i -g @proxyhuman/mcp`) and registered with the host harness (Claude Code, Hermes, Cursor, Codex, etc. — see the Prerequisites section below for the harness-agnostic install flow). The MCP needs Chrome with CDP enabled and network access to https://api.proxyhuman.ai.
+compatibility: Requires the @proxyhuman/mcp MCP server installed (`npm i -g @proxyhuman/mcp`) and registered with the host harness (Claude Code, Hermes, Cursor, Codex, etc. — see the Prerequisites section below for the harness-agnostic install flow). The MCP needs Chrome with CDP enabled and network access to https://app.proxyhuman.ai.
 metadata:
   author: aidenlabs
-  version: "0.2.4"
+  version: "0.3.0"
   homepage: https://proxyhuman.ai
   repository: https://github.com/aidenlabsdotdev/skills
 ---
@@ -139,16 +139,16 @@ user's behalf — you have shell access, they don't need to leave the chat:
    ```
 
 2. **Sign the user up.** Ask them for their email if you don't already have
-   it. This sends a one-time code to that address:
+   it:
    ```bash
    proxyhuman sign-up --email <their-email>
    ```
-   Then ask the user to read you the code from their inbox and verify:
-   ```bash
-   proxyhuman verify <code-they-give-you>
-   ```
-   The API key is saved to `~/.proxyhuman/config.json` (chmod 600). The MCP
-   reads it automatically.
+   The CLI prints the api key and saves it to `~/.proxyhuman/config.json`
+   (chmod 600); the MCP reads it automatically. A welcome email is sent
+   to the address — opening the link in that email verifies the account
+   and lifts it from the "unverified" tier (shorter hand-off limits) to
+   "free". The user can do that asynchronously; the api key works
+   immediately at the unverified limits in the meantime.
 
 3. **Register the MCP with your harness.** This step is harness-specific —
    *you know your own harness*, so do whatever is correct for it. Examples:
